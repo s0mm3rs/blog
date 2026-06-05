@@ -1,55 +1,74 @@
 ---
-titulo: "Cómo enruta WhatsApp las llamadas: P2P vs relay según el NAT del peer"
-descripcion: "Validé con capturas Wireshark/RVI cuándo una llamada de WhatsApp va directa entre pares y cuándo pasa por la infraestructura de Meta. La variable clave es el tipo de NAT."
-fecha: 2026-01-20
-tags: ["redes", "wireshark", "nat", "whatsapp"]
-linkedin: "https://www.linkedin.com/in/tu-perfil/"
+titulo: "Entendemos cómo funcionan nuestras llamadas de WhatsApp y sus mecanismos de seguridad?"
+descripcion: "Cifrado de extremo a extremo, metadatos, IP pública y la opción que WhatsApp te da para protegerte. Resultados de analizar el tráfico con Wireshark."
+fecha: 2026-06-05
+tags: ["whatsapp", "privacidad", "redes", "wireshark", "metadatos"]
+linkedin: "https://www.linkedin.com/posts/angelperdomo"
 destacado: true
 ---
 
-Hay una creencia extendida de que las llamadas de WhatsApp son siempre P2P de punta a punta. La realidad es más matizada: **el enrutamiento depende del tipo de NAT de cada extremo**. Hice una serie de capturas con Wireshark y RVI (Remote Virtual Interface en iOS) para confirmarlo empíricamente.
+Siempre supe que el audio de las llamadas de WhatsApp va cifrado de punta a punta. Lo que no tenía claro era qué pasaba con todo lo demás, así que agarré Wireshark y me puse a mirar el tráfico de mis propias llamadas. Spoiler: el cifrado funciona, pero hay información que viaja por fuera.
 
-## El setup de captura
+Casi todos pensamos: "WhatsApp tiene cifrado de extremo a extremo, entonces mi llamada es 100% privada". Y es verdad… a medias.
 
-Para capturar tráfico de un iPhone sin jailbreak se puede usar RVI, que expone una interfaz virtual en macOS espejando el tráfico del dispositivo:
+Hay que separar los tantos; una cosa es el **contenido** (audio, imagen) —eso sí está blindado— pero por otro lado tenemos los **metadatos** (datos de cómo y desde dónde te conectás). El cifrado protege lo primero. Lo segundo es otra historia.
 
-```bash
-# Obtener el UDID del dispositivo conectado por USB
-idevice_id -l
+## ¿Por qué es de esta forma? (sin tecnicismos)
 
-# Crear la interfaz RVI
-rvictl -s <UDID>
+Para que dos teléfonos se manden audio directamente entre ellos (que es lo más rápido y da mejor calidad), cada uno necesita saber "la dirección" del otro en internet. Esa dirección es la **IP pública**.
 
-# Capturar con tcpdump sobre la interfaz rvi0
-sudo tcpdump -i rvi0 -w whatsapp_call.pcap
-```
+Es como mandar una carta: si querés que llegue directo, necesitás la dirección del destinatario, y él la tuya para contestarte. En una llamada directa, los dos extremos se "ven" la IP mutuamente. No hay forma de evitarlo si la conexión es directa: es la dirección a la que viaja el audio.
 
-Después abrís el `.pcap` en Wireshark y filtrás por el tráfico relevante. Las llamadas usan principalmente UDP con STUN para el establecimiento.
+A esta conexión directa se la llama **P2P** (punto a punto). Es el modo que utiliza WhatsApp cuando se puede, y no es exclusivo de WhatsApp —lo usan otras apps, prácticamente todo lo que transmite voz o video en tiempo real.
 
-## Los dos escenarios
+La alternativa es que la llamada pase por un **servidor intermedio** que reenvía el audio (se llama relay). Ahí los extremos no se ven la IP entre sí (solo ven la del servidor), pero la llamada da un pequeño rodeo y pierde un poco de calidad.
 
-El comportamiento se bifurca según cómo esté detrás de NAT el otro extremo:
+## ¿Qué se puede saber con tu IP… y qué no?
 
-### Peer en WiFi residencial → P2P directo
+Acá es donde no hay que dejarse llevar por las películas.
 
-Cuando ambos extremos tienen un NAT "amigable" (full cone o restricted cone, típico de un router doméstico), el handshake STUN logra abrir un canal directo. El tráfico de medios fluye **directamente entre las IPs públicas de ambos peers**, sin intermediario. Latencia mínima y sin pasar por servidores de Meta para el audio.
+**Lo que NO se puede:**
 
-### Peer detrás de CGNAT → relay vía Meta
+- Escuchar tu llamada. Imposible. El audio está cifrado de punta a punta, pase por donde pase.
+- Saber tu dirección exacta. La IP no te pone un pin en tu casa.
+- "Hackearte" con solo tener tu IP. La IP no es una contraseña ni una llave. Por sí sola no le abre nada a nadie.
 
-Acá está lo interesante. Cuando uno de los extremos está detrás de **CGNAT** (Carrier-Grade NAT, lo habitual en datos móviles y en muchos ISP que ya no dan IPv4 pública), el traversal directo falla. En ese caso el tráfico se enruta a través de la **infraestructura relay de Meta**: ambos extremos hablan con un servidor intermedio que reenvía los paquetes.
+**Lo que SÍ se puede:**
 
-En la captura esto se ve claro: en vez de tráfico hacia la IP pública del contacto, aparecen flujos hacia rangos de Meta/Facebook.
+- Saber tu proveedor de internet (Antel, por ejemplo) y si te estás conectando desde una red fija residencial o desde datos móviles.
+- Inferir que estás conectado desde tu casa en ese momento.
+- Una ubicación aproximada y muchas veces imprecisa.
 
-## Por qué importa
+## ¿Qué hay de la geolocalización en Uruguay?
 
-Esto tiene implicancias concretas:
+Acá quiero detenerme para no caer en el alarmismo, porque se dice muchas veces "te pueden geolocalizar por la IP" como si fuera magia, y en nuestro contexto no es para tanto.
 
-- **Privacidad de IP**: en P2P directo, tu IP pública queda expuesta al otro extremo (relevante para investigaciones, OSINT, o al revés, para entender tu propia exposición).
-- **Latencia y calidad**: el relay agrega un salto. Si notás peor calidad en datos móviles, el CGNAT del carrier puede ser la causa.
-- **Análisis forense**: saber distinguir un flujo directo de uno relay ayuda a interpretar capturas en una investigación.
+Uruguay es un país chico. La mayoría de las conexiones salen por Antel, y los rangos de direcciones no están separados por localidad. Cuando alguien mete una IP uruguaya en servicios de "geolocalización por IP", lo más probable es que le devuelva algo genérico como "Uruguay, Montevideo", aunque la persona esté en Minas, Maldonado o donde sea. Hay pocos nodos posibles.
 
-La conclusión práctica: **no asumas P2P**. El tipo de NAT de cada extremo decide el camino, y el CGNAT —cada vez más común— fuerza el relay.
+Por lo cual, conocer la IP pública de alguien no es una herramienta para saber dónde vive. Para la mayoría de las personas, esto no representa un riesgo real.
 
----
+Pero el problema de la IP no es tanto que te ubiquen en el mapa. Es que esa metadata que se filtra puede usarse para **perfilar y correlacionar**. Que alguien sepa tu proveedor, tu tipo de conexión, y que estás en casa en tal momento, no suena dramático hasta que se combina con otros datos. La IP rara vez es peligrosa sola, pero puede cobrar cierto riesgo si se usa como pieza que se cruza con otra información.
 
-> Si te interesa el detalle de los filtros de Wireshark que usé para distinguir los flujos, escribime y armo un follow-up.
+## ¿Cuándo importa de verdad?
+
+Para la mayoría de nosotros, llamando a la familia y a los amigos, esto es más una curiosidad técnica que un riesgo real.
+
+Pero el escenario cambia si sos periodista, activista, hablás con desconocidos por trabajo o estás en una situación delicada. En contextos de alto riesgo, la IP puede ser el primer dato que usa un atacante para algo más serio. La propia Meta menciona que las llamadas pueden ser un vector de ataques sofisticados (llegaron a citar el caso del spyware Pegasus), y que conseguir la IP del objetivo es parte de eso.
+
+No es para asustarse. Es para dimensionar: para casi todos, irrelevante; para algunos perfiles, muy relevante.
+
+## ¿Y se puede hacer algo al respecto?
+
+Lo bueno es que WhatsApp nos da el control, y mucha gente no conoce que la opción existe.
+
+**La opción "Proteger dirección IP en las llamadas"**: está en Ajustes → Privacidad → Avanzado. Cuando se activa, todas las llamadas pasan por los servidores de WhatsApp (modo relay) en vez de ir directas. Resultado: la otra persona ya no ve tu IP. El costo es una leve bajada en la calidad, imperceptible para la mayoría de los casos. En nosotros está ver si nos preocupa la calidad o la privacidad.
+
+**Un dato curioso**: en datos móviles ya estás más protegido. Por cómo funcionan las redes celulares (comparten una misma salida entre muchísimos clientes), tu teléfono en datos móviles es prácticamente inalcanzable de forma directa. Así que, sin tocar nada, una llamada por datos tiende a no exponer tu IP de la misma forma que una por WiFi de tu casa.
+
+## Para cerrar
+
+El cifrado de WhatsApp protege muy bien lo que decimos. Eso está fuera de discusión y es una gran noticia. Pero la privacidad es más que el contenido —también es la metadata, esos datos sobre nuestra conexión que se filtran sin que nadie escuche una palabra de la charla.
+
+La idea de esta publicación no es asustar (ya vimos que para la mayoría no hay mucho de qué preocuparse, y menos en Uruguay) sino entender cómo funciona lo que usamos todos los días. Entenderlo nos permite decidir, saber que la opción existe y que en nosotros está la decisión de mantenernos un poco más seguros.
+
+Para los que les interese, en estos días estaré publicando el detalle técnico de cómo realicé estas pruebas y un hallazgo sobre las redes móviles que la documentación oficial no menciona.
