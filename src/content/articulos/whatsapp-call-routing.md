@@ -3,7 +3,7 @@ titulo: "Entendemos cómo funcionan nuestras llamadas de WhatsApp y sus mecanism
 descripcion: "Cifrado de extremo a extremo, metadatos, IP pública y la opción que WhatsApp te da para protegerte. Resultados de analizar el tráfico con Wireshark."
 fecha: 2026-06-05
 tags: ["whatsapp", "privacidad", "redes", "wireshark", "metadatos"]
-linkedin: "https://www.linkedin.com/posts/angelperdomo"
+linkedin: "https://www.linkedin.com/in/angelmartinperdomo/"
 destacado: true
 ---
 
