@@ -1,0 +1,45 @@
+---
+import Base from '../layouts/Base.astro';
+import { getCollection } from 'astro:content';
+
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+
+// Traer artículos no-borrador, ordenados: destacados primero, luego por fecha desc
+const articulos = (await getCollection('articulos', ({ data }) => !data.borrador))
+  .sort((a, b) => {
+    if (a.data.destacado !== b.data.destacado) return a.data.destacado ? -1 : 1;
+    return b.data.fecha.valueOf() - a.data.fecha.valueOf();
+  });
+
+const fmt = (d: Date) =>
+  d.toLocaleDateString('es-UY', { year: 'numeric', month: '2-digit', day: '2-digit' });
+---
+
+<Base>
+  <ul class="lista">
+    {articulos.map((art, i) => (
+      <li class="fade-in" style={`animation-delay:${i * 60}ms`}>
+        <a href={`${base.replace(/\/$/, '')}/articulos/${art.slug}`} class="articulo-item">
+          <div class="art-meta">
+            <span class="fecha">{fmt(art.data.fecha)}</span>
+            {art.data.destacado && <span class="destacado-badge">DESTACADO</span>}
+          </div>
+          <div class="art-titulo">{art.data.titulo}</div>
+          <p class="art-desc">{art.data.descripcion}</p>
+          {art.data.tags.length > 0 && (
+            <div class="art-tags">
+              {art.data.tags.map((t) => <span class="tag">{t}</span>)}
+            </div>
+          )}
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  {articulos.length === 0 && (
+    <p style="color: var(--fg-dim); padding: 40px 0; text-align: center;">
+      No hay artículos todavía. Agregá un <code>.md</code> en
+      <code>src/content/articulos/</code>.
+    </p>
+  )}
+</Base>
